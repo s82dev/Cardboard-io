@@ -1,75 +1,78 @@
 <!DOCTYPE html>
-<html lang="de">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>Cardboard</title>
-  <style>
-    html, body {
-      margin: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: #fff;
-      touch-action: none;
-      font-family: Arial, sans-serif;
-    }
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D Territory</title>
+<style>
+body { margin:0; overflow:hidden; }
+canvas { display:block; }
+#ui {
+  position:fixed;
+  bottom:20px;
+  left:50%;
+  transform:translateX(-50%);
+}
+button {
+  font-size:20px;
+  padding:10px;
+  margin:5px;
+}
+</style>
+</head>
 
-    canvas {
-      display: block;
-      width: 100vw;
-      height: 100vh;
-      background: #fff;
-    }
+<body>
 
-    #hud {
-      position: fixed;
-      top: 12px;
-      left: 12px;
-      z-index: 10;
-      background: rgba(255,255,255,0.9);
-      border: 1px solid rgba(0,0,0,0.08);
-      border-radius: 14px;
-      padding: 10px 12px;
-      font-size: 15px;
-      color: #111;
-      box-shadow: 0 6px 20px rgba(0,0,0,0.08);
-      backdrop-filter: blur(6px);
-    }
+<div id="ui">
+  <button id="up">▲</button>
+  <button id="left">◀</button>
+  <button id="down">▼</button>
+  <button id="right">▶</button>
+</div>
 
-    #controls {
-      position: fixed;
-      left: 50%;
-      bottom: 16px;
-      transform: translateX(-50%);
-      display: grid;
-      grid-template-columns: 64px 64px 64px;
-      grid-template-rows: 64px 64px;
-      gap: 10px;
-      z-index: 10;
-      user-select: none;
-      -webkit-user-select: none;
-    }
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 
-    .btn {
-      width: 64px;
-      height: 64px;
-      border: 0;
-      border-radius: 18px;
-      font-size: 22px;
-      font-weight: 700;
-      background: rgba(0,0,0,0.08);
-      color: #111;
-      box-shadow: 0 6px 18px rgba(0,0,0,0.12);
-    }
+<script>
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xffffff);
 
-    .btn:active {
-      background: rgba(0,0,0,0.18);
-    }
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer();
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
 
-    #up { grid-column: 2; grid-row: 1; }
-    #left { grid-column: 1; grid-row: 2; }
-    #down { grid-column: 2; grid-row: 2; }
+// Licht
+const light = new THREE.DirectionalLight(0xffffff,1);
+light.position.set(5,10,5);
+scene.add(light);
+
+// Boden (Tiles)
+const size = 30;
+const tiles = [];
+
+for(let x=-size; x<size; x++){
+  for(let z=-size; z<size; z++){
+    const tile = new THREE.Mesh(
+      new THREE.BoxGeometry(1,0.1,1),
+      new THREE.MeshStandardMaterial({color:0xffffff})
+    );
+    tile.position.set(x,0,z);
+    scene.add(tile);
+    tiles.push(tile);
+  }
+}
+
+// Spieler
+const player = new THREE.Mesh(
+  new THREE.BoxGeometry(1,1,1),
+  new THREE.MeshStandardMaterial({color:0x00ffcc})
+);
+player.position.y = 0.5;
+scene.add(player);
+
+// Bots
+const bots = [];
+
+function    #down { grid-column: 2; grid-row: 2; }
     #right { grid-column: 3; grid-row: 2; }
 
     #hint {
