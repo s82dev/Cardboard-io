@@ -1,40 +1,191 @@
 <!DOCTYPE html>
-<html>
+<html lang="de">
 <head>
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>3D Territory</title>
+<title>Cardboard</title>
+
 <style>
-body { margin:0; overflow:hidden; }
+body {
+  margin:0;
+  overflow:hidden;
+  background:#fff;
+  touch-action:none;
+}
+
 canvas { display:block; }
-#ui {
-  position:fixed;
-  bottom:20px;
-  left:50%;
-  transform:translateX(-50%);
-}
-button {
-  font-size:20px;
-  padding:10px;
-  margin:5px;
-}
 </style>
 </head>
 
 <body>
-
-<div id="ui">
-  <button id="up">▲</button>
-  <button id="left">◀</button>
-  <button id="down">▼</button>
-  <button id="right">▶</button>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<canvas id="c"></canvas>
 
 <script>
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xffffff);
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
 
+function resize(){
+  canvas.width = innerWidth;
+  canvas.height = innerHeight;
+}
+resize();
+onresize = resize;
+
+// GRID
+const SIZE = 80;
+const grid = Array.from({length:SIZE},()=>Array(SIZE).fill(null));
+const trails = Array.from({length:SIZE},()=>Array(SIZE).fill(null));
+
+// COLORS
+const COLORS = ["#00d7c9","#ff5b5b","#ffaa00","#a855f7","#4da3ff"];
+
+// PLAYER + BOTS
+function make(id,x,y){
+  return {
+    id,
+    x,y,
+    dir:0,
+    next:0,
+    trail:[],
+    color:COLORS[id]
+  };
+}
+
+const player = make(0,40,40);
+const bots = [
+  make(1,10,10),
+  make(2,70,10),
+  make(3,10,70),
+  make(4,70,70)
+];
+
+const all = [player,...bots];
+
+// START TERRITORY
+function claim(e,x,y){
+  grid[y][x] = e.id;
+}
+all.forEach(e=>{
+  for(let dx=-1;dx<=1;dx++)
+    for(let dy=-1;dy<=1;dy++)
+      claim(e,e.x+dx,e.y+dy);
+});
+
+// CONTROLS
+let dir = 0;
+onkeydown = e=>{
+  if(e.key=="w"||e.key=="ArrowUp") dir=3;
+  if(e.key=="s"||e.key=="ArrowDown") dir=1;
+  if(e.key=="a"||e.key=="ArrowLeft") dir=2;
+  if(e.key=="d"||e.key=="ArrowRight") dir=0;
+};
+
+// MOVE
+function step(e){
+  if(Math.abs(dir-e.dir)!==2) e.dir = e===player ? dir : e.dir;
+
+  if(e.dir==0) e.x++;
+  if(e.dir==1) e.y++;
+  if(e.dir==2) e.x--;
+  if(e.dir==3) e.y--;
+
+  e.x = Math.max(0,Math.min(SIZE-1,e.x));
+  e.y = Math.max(0,Math.min(SIZE-1,e.y));
+
+  // death
+  if(trails[e.y][e.x]!=null){
+    respawn(e);
+    return;
+  }
+
+  if(grid[e.y][e.x]!==e.id){
+    trails[e.y][e.x] = e.id;
+    e.trail.push([e.x,e.y]);
+  } else if(e.trail.length){
+    // fill
+    e.trail.forEach(p=>{
+      grid[p[1]][p[0]] = e.id;
+      trails[p[1]][p[0]] = null;
+    });
+    e.trail=[];
+  }
+}
+
+// RESPAWN
+function respawn(e){
+  e.x = Math.floor(Math.random()*SIZE);
+  e.y = Math.floor(Math.random()*SIZE);
+  e.trail.forEach(p=> trails[p[1]][p[0]] = null);
+  e.trail=[];
+}
+
+// BOT AI
+function bot(e){
+  if(Math.random()<0.1){
+    e.dir = Math.floor(Math.random()*4);
+  }
+}
+
+// DRAW
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  let cell = Math.min(canvas.width,canvas.height)/20;
+
+  let camX = player.x;
+  let camY = player.y;
+
+  function screen(x,y){
+    return [
+      (x-camX)*cell + canvas.width/2,
+      (y-camY)*cell + canvas.height/2
+    ];
+  }
+
+  // territory
+  for(let y=0;y<SIZE;y++){
+    for(let x=0;x<SIZE;x++){
+      let id = grid[y][x];
+      if(id!=null){
+        let [sx,sy] = screen(x,y);
+        ctx.fillStyle = COLORS[id]+"55";
+        ctx.fillRect(sx,sy,cell,cell);
+      }
+    }
+  }
+
+  // trails
+  for(let y=0;y<SIZE;y++){
+    for(let x=0;x<SIZE;x++){
+      let id = trails[y][x];
+      if(id!=null){
+        let [sx,sy] = screen(x,y);
+        ctx.fillStyle = COLORS[id];
+        ctx.fillRect(sx,sy,cell,cell);
+      }
+    }
+  }
+
+  // players
+  all.forEach(e=>{
+    let [sx,sy] = screen(e.x,e.y);
+    ctx.fillStyle = e.color;
+    ctx.fillRect(sx,sy,cell,cell);
+  });
+}
+
+// LOOP
+setInterval(()=>{
+  step(player);
+  bots.forEach(b=>{
+    bot(b);
+    step(b);
+  });
+  draw();
+},100);
+</script>
+</body>
+</html>
 const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer();
 renderer.setSize(innerWidth, innerHeight);
