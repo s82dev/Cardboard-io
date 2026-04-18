@@ -3,19 +3,23 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>Cardboard City</title>
+  <title>Cardboard</title>
   <style>
     html, body {
       margin: 0;
-      padding: 0;
+      width: 100%;
+      height: 100%;
       overflow: hidden;
-      background: #0b0f14;
+      background: #fff;
       touch-action: none;
       font-family: Arial, sans-serif;
     }
 
     canvas {
       display: block;
+      width: 100vw;
+      height: 100vh;
+      background: #fff;
     }
 
     #hud {
@@ -23,18 +27,476 @@
       top: 12px;
       left: 12px;
       z-index: 10;
-      color: white;
-      background: rgba(0, 0, 0, 0.35);
-      padding: 10px 12px;
+      background: rgba(255,255,255,0.85);
+      border: 1px solid rgba(0,0,0,0.08);
       border-radius: 14px;
-      font-size: 16px;
+      padding: 10px 12px;
+      font-size: 15px;
+      color: #111;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.08);
       backdrop-filter: blur(6px);
     }
 
     #controls {
       position: fixed;
       left: 50%;
-      bottom: 18px;
+      bottom: 16px;
+      transform: translateX(-50%);
+      display: grid;
+      grid-template-columns: 64px 64px 64px;
+      grid-template-rows: 64px 64px;
+      gap: 10px;
+      z-index: 10;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .btn {
+      width: 64px;
+      height: 64px;
+      border: 0;
+      border-radius: 18px;
+      font-size: 22px;
+      font-weight: 700;
+      background: rgba(0,0,0,0.08);
+      color: #111;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+    }
+
+    .btn:active {
+      background: rgba(0,0,0,0.18);
+    }
+
+    #up { grid-column: 2; grid-row: 1; }
+    #left { grid-column: 1; grid-row: 2; }
+    #down { grid-column: 2; grid-row: 2; }
+    #right { grid-column: 3; grid-row: 2; }
+
+    #hint {
+      position: fixed;
+      top: 12px;
+      right: 12px;
+      z-index: 10;
+      max-width: 220px;
+      text-align: right;
+      background: rgba(255,255,255,0.85);
+      border: 1px solid rgba(0,0,0,0.08);
+      border-radius: 14px;
+      padding: 10px 12px;
+      font-size: 13px;
+      color: #111;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+    }
+  </style>
+</head>
+<body>
+  <div id="hud">Gebiet: <span id="area">0</span> | Bots: 4</div>
+  <div id="hint">WASD / Pfeile oder die Buttons unten. Linie berühren = tot.</div>
+
+  <div id="controls">
+    <button class="btn" id="up">▲</button>
+    <button class="btn" id="left">◀</button>
+    <button class="btn" id="down">▼</button>
+    <button class="btn" id="right">▶</button>
+  </div>
+
+  <canvas id="game"></canvas>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+    const areaEl = document.getElementById("area");
+
+    const GRID = 48;
+    const BG = "#ffffff";
+    const GRID_LINE = "rgba(0,0,0,0.06)";
+
+    let cellSize = 12;
+    let offX = 0;
+    let offY = 0;
+
+    function resize() {
+      canvas.width = window.innerWidth * devicePixelRatio;
+      canvas.height = window.innerHeight * devicePixelRatio;
+      ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+
+      cellSize = Math.floor(Math.min(window.innerWidth / GRID, window.innerHeight / GRID));
+      cellSize = Math.max(cellSize, 8);
+
+      offX = Math.floor((window.innerWidth - GRID * cellSize) / 2);
+      offY = Math.floor((window.innerHeight - GRID * cellSize) / 2);
+    }
+    window.addEventListener("resize", resize);
+    resize();
+
+    const colors = {
+      player: "#00d7c9",
+      bot1: "#ff5b5b",
+      bot2: "#ffb84d",
+      bot3: "#a855f7",
+      bot4: "#4da3ff"
+    };
+
+    function key(x, y) {
+      return `${x},${y}`;
+    }
+
+    function inBounds(x, y) {
+      return x >= 0 && y >= 0 && x < GRID && y < GRID;
+    }
+
+    function opposite(d) {
+      return (d + 2) % 4;
+    }
+
+    function dirVec(d) {
+      if (d === 0) return [1, 0];
+      if (d === 1) return [0, 1];
+      if (d === 2) return [-1, 0];
+      return [0, -1];
+    }
+
+    function pointInPoly(px, py, poly) {
+      let inside = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const xi = poly[i].x, yi = poly[i].y;
+        const xj = poly[j].x, yj = poly[j].y;
+        const hit = ((yi > py) !== (yj > py)) &&
+          (px < (xj - xi) * (py - yi) / ((yj - yi) || 0.00001) + xi);
+        if (hit) inside = !inside;
+      }
+      return inside;
+    }
+
+    function makeEntity(name, color, sx, sy) {
+      const e = {
+        name,
+        color,
+        x: sx,
+        y: sy,
+        dir: 0,
+        nextDir: 0,
+        spawnX: sx,
+        spawnY: sy,
+        trail: [],
+        trailSet: new Set(),
+        territory: new Set(),
+        alive: true,
+        moveAcc: 0,
+        isPlayer: false
+      };
+      return e;
+    }
+
+    const entities = [];
+    const player = makeEntity("player", colors.player, 24, 24);
+    player.isPlayer = true;
+    entities.push(player);
+
+    const botA = makeEntity("bot1", colors.bot1, 6, 6);
+    const botB = makeEntity("bot2", colors.bot2, 41, 6);
+    const botC = makeEntity("bot3", colors.bot3, 6, 41);
+    const botD = makeEntity("bot4", colors.bot4, 41, 41);
+    entities.push(botA, botB, botC, botD);
+
+    function addStartTerritory(entity, radius = 1) {
+      for (let y = entity.spawnY - radius; y <= entity.spawnY + radius; y++) {
+        for (let x = entity.spawnX - radius; x <= entity.spawnX + radius; x++) {
+          if (inBounds(x, y)) entity.territory.add(key(x, y));
+        }
+      }
+    }
+
+    for (const e of entities) addStartTerritory(e, 1);
+
+    function territoryCount(entity) {
+      return entity.territory.size;
+    }
+
+    function resetEntity(entity) {
+      entity.x = entity.spawnX;
+      entity.y = entity.spawnY;
+      entity.dir = Math.floor(Math.random() * 4);
+      entity.nextDir = entity.dir;
+      entity.trail = [];
+      entity.trailSet = new Set();
+      entity.moveAcc = 0;
+      entity.alive = true;
+    }
+
+    function addTrailCell(entity, x, y) {
+      const k = key(x, y);
+      if (!entity.trailSet.has(k)) {
+        entity.trailSet.add(k);
+        entity.trail.push({ x, y });
+      }
+    }
+
+    function isAnyTrailAt(x, y, ignoreEntity = null) {
+      const k = key(x, y);
+      for (const e of entities) {
+        if (e === ignoreEntity) continue;
+        if (e.trailSet.has(k)) return true;
+      }
+      return false;
+    }
+
+    function kill(entity) {
+      resetEntity(entity);
+    }
+
+    function fillInsideTrail(entity, endX, endY) {
+      const poly = entity.trail.map(c => ({ x: c.x + 0.5, y: c.y + 0.5 }));
+      poly.push({ x: endX + 0.5, y: endY + 0.5 });
+
+      if (poly.length < 3) {
+        for (const c of entity.trail) entity.territory.add(key(c.x, c.y));
+        entity.trail = [];
+        entity.trailSet = new Set();
+        return;
+      }
+
+      let minX = GRID, minY = GRID, maxX = 0, maxY = 0;
+      for (const p of poly) {
+        minX = Math.min(minX, Math.floor(p.x));
+        minY = Math.min(minY, Math.floor(p.y));
+        maxX = Math.max(maxX, Math.ceil(p.x));
+        maxY = Math.max(maxY, Math.ceil(p.y));
+      }
+
+      for (let y = Math.max(0, minY - 1); y <= Math.min(GRID - 1, maxY + 1); y++) {
+        for (let x = Math.max(0, minX - 1); x <= Math.min(GRID - 1, maxX + 1); x++) {
+          const centerX = x + 0.5;
+          const centerY = y + 0.5;
+          const k = key(x, y);
+          if (entity.territory.has(k)) continue;
+          if (pointInPoly(centerX, centerY, poly)) {
+            entity.territory.add(k);
+          }
+        }
+      }
+
+      for (const c of entity.trail) entity.territory.add(key(c.x, c.y));
+      entity.trail = [];
+      entity.trailSet = new Set();
+    }
+
+    function moveOneStep(entity) {
+      let d = entity.dir;
+
+      if (entity.isPlayer) {
+        const nd = entity.nextDir;
+        if (nd !== undefined && nd !== null && nd !== opposite(d)) {
+          d = nd;
+          entity.dir = d;
+        }
+      }
+
+      const [vx, vy] = dirVec(d);
+      let nx = entity.x + vx;
+      let ny = entity.y + vy;
+
+      if (!inBounds(nx, ny)) {
+        entity.dir = opposite(entity.dir);
+        entity.nextDir = entity.dir;
+        return;
+      }
+
+      if (isAnyTrailAt(nx, ny, entity) || entity.trailSet.has(key(nx, ny))) {
+        kill(entity);
+        return;
+      }
+
+      entity.x = nx;
+      entity.y = ny;
+
+      const here = key(nx, ny);
+      const inOwnLand = entity.territory.has(here);
+
+      if (!inOwnLand) {
+        addTrailCell(entity, nx, ny);
+      } else if (entity.trail.length > 0) {
+        fillInsideTrail(entity, nx, ny);
+      }
+    }
+
+    function botThink(bot) {
+      if (Math.random() < 0.10) {
+        const opts = [0, 1, 2, 3].filter(d => d !== opposite(bot.dir));
+        bot.dir = opts[Math.floor(Math.random() * opts.length)];
+      }
+
+      const [vx, vy] = dirVec(bot.dir);
+      const nx = bot.x + vx;
+      const ny = bot.y + vy;
+
+      if (!inBounds(nx, ny)) {
+        bot.dir = opposite(bot.dir);
+      }
+
+      const nearBorder = bot.x < 2 || bot.y < 2 || bot.x > GRID - 3 || bot.y > GRID - 3;
+      if (nearBorder && Math.random() < 0.6) {
+        const opts = [0, 1, 2, 3].filter(d => d !== opposite(bot.dir));
+        bot.dir = opts[Math.floor(Math.random() * opts.length)];
+      }
+    }
+
+    const controls = { up: false, down: false, left: false, right: false };
+
+    function bindButton(id, dir) {
+      const el = document.getElementById(id);
+      const on = () => controls[dir] = true;
+      const off = () => controls[dir] = false;
+
+      el.addEventListener("pointerdown", e => { e.preventDefault(); on(); });
+      el.addEventListener("pointerup", off);
+      el.addEventListener("pointercancel", off);
+      el.addEventListener("pointerleave", off);
+    }
+
+    bindButton("up", "up");
+    bindButton("down", "down");
+    bindButton("left", "left");
+    bindButton("right", "right");
+
+    document.addEventListener("keydown", e => {
+      const k = e.key.toLowerCase();
+      if (k === "w" || e.key === "ArrowUp") controls.up = true;
+      if (k === "s" || e.key === "ArrowDown") controls.down = true;
+      if (k === "a" || e.key === "ArrowLeft") controls.left = true;
+      if (k === "d" || e.key === "ArrowRight") controls.right = true;
+    });
+
+    document.addEventListener("keyup", e => {
+      const k = e.key.toLowerCase();
+      if (k === "w" || e.key === "ArrowUp") controls.up = false;
+      if (k === "s" || e.key === "ArrowDown") controls.down = false;
+      if (k === "a" || e.key === "ArrowLeft") controls.left = false;
+      if (k === "d" || e.key === "ArrowRight") controls.right = false;
+    });
+
+    function updatePlayerDir() {
+      if (controls.up) player.nextDir = 3;
+      else if (controls.down) player.nextDir = 1;
+      else if (controls.left) player.nextDir = 2;
+      else if (controls.right) player.nextDir = 0;
+    }
+
+    let last = performance.now();
+    let tickAcc = 0;
+    const stepTime = 110; // ms
+
+    function drawCell(x, y, fill) {
+      ctx.fillStyle = fill;
+      ctx.fillRect(offX + x * cellSize, offY + y * cellSize, cellSize, cellSize);
+    }
+
+    function render() {
+      ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      ctx.fillStyle = BG;
+      ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+
+      // Grid
+      ctx.strokeStyle = GRID_LINE;
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= GRID; i++) {
+        const px = offX + i * cellSize;
+        const py = offY + i * cellSize;
+
+        ctx.beginPath();
+        ctx.moveTo(px, offY);
+        ctx.lineTo(px, offY + GRID * cellSize);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(offX, py);
+        ctx.lineTo(offX + GRID * cellSize, py);
+        ctx.stroke();
+      }
+
+      // Territories
+      for (const e of entities) {
+        const hex = e.color;
+        const tint = hex + "33";
+        for (const k of e.territory) {
+          const [x, y] = k.split(",").map(Number);
+          drawCell(x, y, tint);
+        }
+      }
+
+      // Trails
+      for (const e of entities) {
+        for (const c of e.trail) {
+          drawCell(c.x, c.y, e.color);
+        }
+      }
+
+      // Entities as blobs
+      for (const e of entities) {
+        const cx = offX + (e.x + 0.5) * cellSize;
+        const cy = offY + (e.y + 0.5) * cellSize;
+        const r = e.isPlayer ? cellSize * 0.42 : cellSize * 0.35;
+
+        ctx.beginPath();
+        ctx.fillStyle = e.color;
+        ctx.shadowColor = e.color;
+        ctx.shadowBlur = 10;
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        ctx.beginPath();
+        ctx.strokeStyle = "rgba(255,255,255,0.9)";
+        ctx.lineWidth = 2;
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      areaEl.textContent = territoryCount(player);
+    }
+
+    function gameLoop(now) {
+      const dt = now - last;
+      last = now;
+      tickAcc += dt;
+
+      updatePlayerDir();
+
+      while (tickAcc >= stepTime) {
+        // Player move
+        player.moveAcc += 1;
+        moveOneStep(player);
+
+        // Bots move
+        for (const bot of [botA, botB, botC, botD]) {
+          botThink(bot);
+          moveOneStep(bot);
+        }
+
+        tickAcc -= stepTime;
+      }
+
+      render();
+      requestAnimationFrame(gameLoop);
+    }
+
+    // Start directions
+    player.dir = 0;
+    player.nextDir = 0;
+    botA.dir = 0;
+    botB.dir = 1;
+    botC.dir = 3;
+    botD.dir = 2;
+
+    // Small initial territory emphasis
+    for (const e of entities) {
+      e.territory.add(key(e.spawnX, e.spawnY));
+    }
+
+    requestAnimationFrame(gameLoop);
+  </script>
+</body>
+</html>      bottom: 18px;
       transform: translateX(-50%);
       z-index: 10;
       display: grid;
