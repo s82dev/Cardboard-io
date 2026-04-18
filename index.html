@@ -248,6 +248,114 @@ function startGame(){
 </script>
 
 </body>
+</html>  if(grid[e.y][e.x]!==e.id){
+    trail[e.y][e.x]=e.id;
+    e.trail.push([e.x,e.y]);
+  } else if(e.trail.length){
+    e.trail.forEach(p=>{
+      grid[p[1]][p[0]]=e.id;
+      trail[p[1]][p[0]]=null;
+    });
+    e.trail=[];
+  }
+}
+
+// RESPAWN
+function respawn(e){
+  e.x=Math.random()*SIZE|0;
+  e.y=Math.random()*SIZE|0;
+  e.trail.forEach(p=>trail[p[1]][p[0]]=null);
+  e.trail=[];
+}
+
+// BOTS
+function bot(e){
+  if(Math.random()<0.1){
+    e.dir=Math.random()*4|0;
+  }
+}
+
+// DRAW (FAKE 3D)
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  let cell = Math.min(canvas.width,canvas.height)/18;
+
+  let camX=player.x;
+  let camY=player.y;
+
+  function screen(x,y){
+    let sx = (x-camX)*cell + canvas.width/2;
+    let sy = (y-camY)*cell + canvas.height/2;
+    return [sx,sy];
+  }
+
+  // grid
+  for(let y=0;y<SIZE;y++){
+    for(let x=0;x<SIZE;x++){
+      let id = grid[y][x];
+      if(id!=null){
+        let [sx,sy]=screen(x,y);
+
+        ctx.fillStyle=COLORS[id];
+        ctx.fillRect(sx,sy,cell,cell);
+
+        // fake 3D shadow
+        ctx.fillStyle="rgba(0,0,0,0.15)";
+        ctx.fillRect(sx,sy+cell-4,cell,4);
+      }
+    }
+  }
+
+  // trails
+  for(let y=0;y<SIZE;y++){
+    for(let x=0;x<SIZE;x++){
+      let id = trail[y][x];
+      if(id!=null){
+        let [sx,sy]=screen(x,y);
+        ctx.fillStyle=COLORS[id];
+        ctx.fillRect(sx,sy,cell,cell);
+      }
+    }
+  }
+
+  // player & bots
+  [player,...bots].forEach(e=>{
+    let [sx,sy]=screen(e.x,e.y);
+
+    ctx.fillStyle=e.color;
+    ctx.fillRect(sx,sy,cell,cell);
+
+    ctx.strokeStyle="#fff";
+    ctx.lineWidth=2;
+    ctx.strokeRect(sx,sy,cell,cell);
+  });
+}
+
+// LOOP
+function loop(){
+  if(!running) return;
+
+  move(player);
+  bots.forEach(b=>{
+    bot(b);
+    move(b);
+  });
+
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// START
+function startGame(){
+  document.getElementById("menu").style.display="none";
+  running=true;
+  init();
+  loop();
+}
+</script>
+
+</body>
 </html>});
 
 // CONTROLS
