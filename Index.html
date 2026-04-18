@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>cardboard 3D</title>
+  <style>
+    body { margin:0; overflow:hidden; }
+  </style>
+</head>
+<body>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+
+<script>
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x222222);
+
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer();
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// Spieler
+const playerGeo = new THREE.BoxGeometry(1,1,1);
+const playerMat = new THREE.MeshBasicMaterial({color: 0x00ffcc});
+const player = new THREE.Mesh(playerGeo, playerMat);
+scene.add(player);
+
+camera.position.z = 10;
+
+// Movement
+let keys = {};
+document.addEventListener("keydown", e => keys[e.key] = true);
+document.addEventListener("keyup", e => keys[e.key] = false);
+
+// Trail (Farbspur)
+let trail = [];
+
+function createTrail(x, z) {
+  const geo = new THREE.BoxGeometry(1,0.1,1);
+  const mat = new THREE.MeshBasicMaterial({color: 0x00ffcc});
+  const cube = new THREE.Mesh(geo, mat);
+  cube.position.set(x, -1, z);
+  scene.add(cube);
+  trail.push(cube);
+}
+
+// Loop
+function animate() {
+  requestAnimationFrame(animate);
+
+  if(keys["w"]) player.position.z -= 0.1;
+  if(keys["s"]) player.position.z += 0.1;
+  if(keys["a"]) player.position.x -= 0.1;
+  if(keys["d"]) player.position.x += 0.1;
+
+  createTrail(player.position.x, player.position.z);
+
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
