@@ -1,40 +1,391 @@
 <!DOCTYPE html>
-<html>
+<html lang="de">
 <head>
-  <title>Cardboard Game</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Cardboard City</title>
   <style>
-    body { margin:0; overflow:hidden; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #0b0f14;
+      touch-action: none;
+      font-family: Arial, sans-serif;
+    }
+
+    canvas {
+      display: block;
+    }
+
+    #hud {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      z-index: 10;
+      color: white;
+      background: rgba(0, 0, 0, 0.35);
+      padding: 10px 12px;
+      border-radius: 14px;
+      font-size: 16px;
+      backdrop-filter: blur(6px);
+    }
+
+    #controls {
+      position: fixed;
+      left: 50%;
+      bottom: 18px;
+      transform: translateX(-50%);
+      z-index: 10;
+      display: grid;
+      grid-template-columns: 64px 64px 64px;
+      grid-template-rows: 64px 64px;
+      gap: 10px;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .btn {
+      width: 64px;
+      height: 64px;
+      border: none;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.16);
+      color: white;
+      font-size: 24px;
+      font-weight: bold;
+    }
+
+    .btn:active {
+      background: rgba(0, 255, 213, 0.35);
+    }
+
+    #up {
+      grid-column: 2;
+      grid-row: 1;
+    }
+
+    #left {
+      grid-column: 1;
+      grid-row: 2;
+    }
+
+    #down {
+      grid-column: 2;
+      grid-row: 2;
+    }
+
+    #right {
+      grid-column: 3;
+      grid-row: 2;
+    }
+
+    #hint {
+      position: fixed;
+      right: 12px;
+      top: 12px;
+      z-index: 10;
+      color: white;
+      background: rgba(0, 0, 0, 0.25);
+      padding: 10px 12px;
+      border-radius: 14px;
+      font-size: 13px;
+      max-width: 180px;
+      text-align: right;
+      line-height: 1.35;
+    }
   </style>
 </head>
 <body>
+  <div id="hud">Score: <span id="score">0</span></div>
+  <div id="hint">Mit den Buttons unten oder mit WASD / Pfeiltasten spielen</div>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+  <div id="controls">
+    <button class="btn" id="up">▲</button>
+    <button class="btn" id="left">◀</button>
+    <button class="btn" id="down">▼</button>
+    <button class="btn" id="right">▶</button>
+  </div>
 
-<script>
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x222222);
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+  <script>
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87a9c9);
+    scene.fog = new THREE.Fog(0x87a9c9, 25, 90);
 
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+    const camera = new THREE.PerspectiveCamera(
+      60,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      200
+    );
+    camera.position.set(0, 14, 18);
 
-const renderer = new THREE.WebGLRenderer();
-renderer.setSize(window.innerWidth, window.innerHeight);
-document.body.appendChild(renderer.domElement);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
 
-// Spieler
-const player = new THREE.Mesh(
-  new THREE.BoxGeometry(1,1,1),
-  new THREE.MeshBasicMaterial({color: 0x00ffcc})
-);
-scene.add(player);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.9);
+    scene.add(ambient);
 
-// Licht
-const light = new THREE.DirectionalLight(0xffffff, 1);
-light.position.set(5,10,5);
-scene.add(light);
+    const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+    sun.position.set(20, 30, 10);
+    scene.add(sun);
 
-// Steuerung
-let keys = {};
-document.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(120, 120),
+      new THREE.MeshStandardMaterial({ color: 0x1f232b, roughness: 1 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    scene.add(ground);
+
+    const roadMaterial = new THREE.MeshStandardMaterial({ color: 0x2d313a, roughness: 1 });
+    const roadLines = [];
+
+    function addRoad(x, z, w, h) {
+      const road = new THREE.Mesh(new THREE.PlaneGeometry(w, h), roadMaterial);
+      road.rotation.x = -Math.PI / 2;
+      road.position.set(x, 0.01, z);
+      scene.add(road);
+      roadLines.push(road);
+    }
+
+    for (let i = -50; i <= 50; i += 10) {
+      addRoad(i, 0, 2.4, 120);
+      addRoad(0, i, 120, 2.4);
+    }
+
+    function rand(min, max) {
+      return Math.random() * (max - min) + min;
+    }
+
+    const buildingMaterial = new THREE.MeshStandardMaterial({ color: 0x556070, roughness: 0.95 });
+    const buildingMaterial2 = new THREE.MeshStandardMaterial({ color: 0x6b5f5a, roughness: 0.95 });
+    const buildingMaterial3 = new THREE.MeshStandardMaterial({ color: 0x4d6875, roughness: 0.95 });
+
+    for (let x = -45; x <= 45; x += 10) {
+      for (let z = -45; z <= 45; z += 10) {
+        if (Math.abs(x) < 8 || Math.abs(z) < 8) continue;
+        if (Math.random() < 0.55) {
+          const h = rand(2.5, 10);
+          const matPick = [buildingMaterial, buildingMaterial2, buildingMaterial3][Math.floor(Math.random() * 3)];
+          const b = new THREE.Mesh(
+            new THREE.BoxGeometry(rand(4, 7), h, rand(4, 7)),
+            matPick
+          );
+          b.position.set(x + rand(-1.5, 1.5), h / 2, z + rand(-1.5, 1.5));
+          scene.add(b);
+        }
+      }
+    }
+
+    const player = new THREE.Mesh(
+      new THREE.BoxGeometry(1.2, 1.2, 1.2),
+      new THREE.MeshStandardMaterial({ color: 0x00ffd5, emissive: 0x003333 })
+    );
+    player.position.set(0, 0.6, 0);
+    scene.add(player);
+
+    const scoreEl = document.getElementById("score");
+    let score = 0;
+
+    const bots = [];
+    const botColors = [0xff4d4d, 0xffb84d, 0xd84dff, 0x4dd8ff];
+
+    function makeBot(color) {
+      const bot = new THREE.Mesh(
+        new THREE.BoxGeometry(1, 1, 1),
+        new THREE.MeshStandardMaterial({ color, emissive: 0x111111 })
+      );
+      bot.position.set(rand(-20, 20), 0.5, rand(-20, 20));
+      bot.userData.vx = rand(-0.08, 0.08);
+      bot.userData.vz = rand(-0.08, 0.08);
+      bot.userData.turnTimer = rand(0.5, 2);
+      scene.add(bot);
+      bots.push(bot);
+    }
+
+    for (let i = 0; i < 4; i++) makeBot(botColors[i]);
+
+    let coin = new THREE.Mesh(
+      new THREE.SphereGeometry(0.45, 20, 20),
+      new THREE.MeshStandardMaterial({ color: 0xffe45c, emissive: 0x665000 })
+    );
+    scene.add(coin);
+
+    function placeCoin() {
+      coin.position.set(rand(-35, 35), 0.55, rand(-35, 35));
+      if (Math.abs(coin.position.x) < 8 && Math.abs(coin.position.z) < 8) {
+        placeCoin();
+      }
+    }
+    placeCoin();
+
+    const controls = {
+      up: false,
+      down: false,
+      left: false,
+      right: false
+    };
+
+    function setControl(name, value) {
+      controls[name] = value;
+    }
+
+    function bindButton(id, name) {
+      const el = document.getElementById(id);
+      el.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        setControl(name, true);
+      });
+      el.addEventListener("pointerup", () => setControl(name, false));
+      el.addEventListener("pointercancel", () => setControl(name, false));
+      el.addEventListener("pointerleave", () => setControl(name, false));
+    }
+
+    bindButton("up", "up");
+    bindButton("down", "down");
+    bindButton("left", "left");
+    bindButton("right", "right");
+
+    document.addEventListener("keydown", (e) => {
+      const k = e.key.toLowerCase();
+      if (k === "w" || e.key === "ArrowUp") controls.up = true;
+      if (k === "s" || e.key === "ArrowDown") controls.down = true;
+      if (k === "a" || e.key === "ArrowLeft") controls.left = true;
+      if (k === "d" || e.key === "ArrowRight") controls.right = true;
+    });
+
+    document.addEventListener("keyup", (e) => {
+      const k = e.key.toLowerCase();
+      if (k === "w" || e.key === "ArrowUp") controls.up = false;
+      if (k === "s" || e.key === "ArrowDown") controls.down = false;
+      if (k === "a" || e.key === "ArrowLeft") controls.left = false;
+      if (k === "d" || e.key === "ArrowRight") controls.right = false;
+    });
+
+    const trail = [];
+    let lastTrailTime = 0;
+
+    function addTrail(x, z) {
+      const tile = new THREE.Mesh(
+        new THREE.BoxGeometry(0.8, 0.08, 0.8),
+        new THREE.MeshStandardMaterial({ color: 0x00ffd5 })
+      );
+      tile.position.set(x, 0.04, z);
+      scene.add(tile);
+      trail.push(tile);
+      if (trail.length > 200) {
+        const old = trail.shift();
+        scene.remove(old);
+      }
+    }
+
+    function clampPlayer() {
+      player.position.x = Math.max(-55, Math.min(55, player.position.x));
+      player.position.z = Math.max(-55, Math.min(55, player.position.z));
+    }
+
+    function hitTest(a, b, dist) {
+      return a.position.distanceTo(b.position) < dist;
+    }
+
+    function resetPlayer() {
+      player.position.set(0, 0.6, 0);
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const speed = 0.16;
+      let moving = false;
+
+      if (controls.up) {
+        player.position.z -= speed;
+        moving = true;
+      }
+      if (controls.down) {
+        player.position.z += speed;
+        moving = true;
+      }
+      if (controls.left) {
+        player.position.x -= speed;
+        moving = true;
+      }
+      if (controls.right) {
+        player.position.x += speed;
+        moving = true;
+      }
+
+      clampPlayer();
+
+      const now = performance.now();
+      if (moving && now - lastTrailTime > 60) {
+        addTrail(player.position.x, player.position.z);
+        lastTrailTime = now;
+      }
+
+      for (const bot of bots) {
+        bot.userData.turnTimer -= 0.016;
+
+        if (bot.userData.turnTimer <= 0) {
+          bot.userData.vx = rand(-0.08, 0.08);
+          bot.userData.vz = rand(-0.08, 0.08);
+          bot.userData.turnTimer = rand(0.6, 2.0);
+        }
+
+        bot.position.x += bot.userData.vx;
+        bot.position.z += bot.userData.vz;
+
+        if (bot.position.x < -55 || bot.position.x > 55) bot.userData.vx *= -1;
+        if (bot.position.z < -55 || bot.position.z > 55) bot.userData.vz *= -1;
+
+        if (Math.abs(bot.position.x) < 6 && Math.abs(bot.position.z) < 6) {
+          bot.userData.vx *= -1;
+          bot.userData.vz *= -1;
+        }
+
+        bot.position.x = Math.max(-55, Math.min(55, bot.position.x));
+        bot.position.z = Math.max(-55, Math.min(55, bot.position.z));
+      }
+
+      if (hitTest(player, coin, 1.2)) {
+        score += 1;
+        scoreEl.textContent = score;
+        placeCoin();
+      }
+
+      for (const bot of bots) {
+        if (hitTest(player, bot, 1.0)) {
+          score = Math.max(0, score - 1);
+          scoreEl.textContent = score;
+          resetPlayer();
+          break;
+        }
+      }
+
+      camera.position.x += (player.position.x - camera.position.x) * 0.08;
+      camera.position.z += (player.position.z + 14 - camera.position.z) * 0.08;
+      camera.position.y += (14 - camera.position.y) * 0.06;
+      camera.lookAt(player.position.x, 0.6, player.position.z);
+
+      coin.rotation.y += 0.04;
+      player.rotation.y += 0.02;
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    window.addEventListener("resize", () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>document.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
 document.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
 
 // Spur
